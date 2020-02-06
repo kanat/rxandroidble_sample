@@ -6,8 +6,10 @@ import androidx.appcompat.app.AppCompatActivity
 import com.polidea.rxandroidble2.*
 import io.reactivex.Single
 import io.reactivex.android.schedulers.AndroidSchedulers
+import io.reactivex.schedulers.Schedulers
 import kotlinx.android.synthetic.main.activity_main.*
 import timber.log.Timber
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.LazyThreadSafetyMode.NONE
 
@@ -24,7 +26,8 @@ private const val ID_UPDATE_UI = 4
 @SuppressLint("SetTextI18n")
 class MainActivity : AppCompatActivity() {
 
-    private val uiScheduler get() = AndroidSchedulers.mainThread()
+    private val scheduler = Schedulers.from(Executors.newSingleThreadExecutor())
+    private val uiScheduler = AndroidSchedulers.mainThread()
     private val rxBleClient by lazy(NONE) { RxBleClient.create(this) }
     private val disposables: Disposables = Disposables()
 
@@ -33,6 +36,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        addressView.text = ADDRESS
         Timber.uprootAll()
         Timber.plant(Timber.DebugTree())
         RxBleClient.updateLogOptions(
@@ -62,7 +66,7 @@ class MainActivity : AppCompatActivity() {
     private fun listenConnection() {
         disposables.add(ID_CONNECTION, rxBleClient.getBleDevice().observeConnectionStateChanges()
             .doOnSubscribe { Timber.tag(TAG).d("[listenConnection] no args") }
-            .observeOn(uiScheduler)
+            .observeOn(scheduler)
             .subscribe({
                 Timber.tag(TAG).d("[listenConnection] emitted: %s", it)
                 updateUI(it)
@@ -76,12 +80,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateUI(state: RxBleConnection.RxBleConnectionState) {
         disposables.add(ID_UPDATE_UI, uiScheduler.scheduleDirect {
-            connectionView.text = "[$ADDRESS] $state"
+            connectionView.text = "$state"
         })
     }
 
     private fun connect() {
         disposables.add(ID_CONNECT, rxBleClient.getBleDevice().establishConnection(AUTO_CONNECT, Timeout(TIMEOUT, TimeUnit.SECONDS))
+            .observeOn(scheduler)
             .doOnSubscribe { Timber.tag(TAG).d("[connect] no args") }
             .subscribe({
                 Timber.tag(TAG).d("[connect] emitted: %s", it)
@@ -94,7 +99,7 @@ class MainActivity : AppCompatActivity() {
 
 
     private fun scheduleReconnect() {
-        disposables.add(ID_RECONNECT, Single.timer(2L, TimeUnit.SECONDS)
+        disposables.add(ID_RECONNECT, Single.timer(2L, TimeUnit.SECONDS, scheduler)
             .doOnSubscribe { Timber.tag(TAG).d("[scheduleReconnect] no args") }
             .subscribe({
                 Timber.tag(TAG).d("[scheduleReconnect] emitted: %s", it)
